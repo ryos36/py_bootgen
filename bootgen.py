@@ -15,6 +15,9 @@ class BootGen(object):
 
 	IMAGE_HEADER_TABLE_VERSION = 0x01020000
 
+	PARTITION_ATTRIBUTE_PS = 0x10
+	PARTITION_ATTRIBUTE_PL = 0x20
+
 	class FatalError(Exception):
 		def __init__(self, msg):
 			self.msg = msg
@@ -48,9 +51,11 @@ class BootGen(object):
 		#print "%x" % (checksum & 0xffffffff)
 		#print "%x" % (~(checksum & 0xffffffff) & 0xffffffff)
 		data += pack("<L", (~(checksum & 0xffffffff) & 0xffffffff))
-		for i in range(0x4c, 0x9c + 4, 4):
+		for i in range(0x4c, 0x9c + 4 - 16, 4):
 			data += pack("<L", 0)
 
+		#undocumented
+		data += pack("<LLLL", 0x0, 0x0, 0x000008c0, 0x00000c80)
 		for i in range(0x0a0, 0x89c + 4, 8):
 			data += pack("<L", 0xffffffff)
 			data += pack("<L", 0)
@@ -86,9 +91,10 @@ class BootGen(object):
 		#print "pack:", pack('B' * len(buf), *buf)
 		data += pack('B' * len(buf), *buf)
 		#print "xx:", len(data)
-		data += pack("L", 0)
+		data += pack(">L", 0)
 		for i in range(len(data), 64):
 			data += pack("B", 0xff)
+		#data += pack("L", 0x99AABBCC)
 		return data
 
 
@@ -144,11 +150,11 @@ class BootGen(object):
 				return False
 			self.__copy_body(fin, bin_file)
 
-	def make_partition_header_table(self, data_word_len, destination_load_addr, destination_exec_addr, data_word_offset, attribute, section_n, check_sum_word_offset, image_header_word_offet) :
-		data = pack("<LLLL", data_word_len, data_word_len, data_word_len, destination_load_addr)
+	def make_partition_header_table(self, partition_data_word_len, extracted_data_word_len, total_data_word_len, destination_load_addr, destination_exec_addr, data_word_offset, attribute, section_n, check_sum_word_offset, image_header_word_offet) :
+		data = pack("<LLLL", partition_data_word_len, extracted_data_word_len, total_data_word_len, destination_load_addr)
 		data += pack("<LLLL", destination_exec_addr, data_word_offset, attribute, section_n)
 		data += pack("<LLLL", check_sum_word_offset, image_header_word_offet, 0, 0)
-		header_check_sum = data_word_len + data_word_len + data_word_len + destination_exec_addr + destination_exec_addr + data_word_offset + attribute + section_n + check_sum_word_offset + image_header_word_offet + 0 + 0 + 0 + 0 + 0
+		header_check_sum = partition_data_word_len + extracted_data_word_len + total_data_word_len + destination_exec_addr + destination_exec_addr + data_word_offset + attribute + section_n + check_sum_word_offset + image_header_word_offet + 0 + 0 + 0 + 0 + 0
 		data += pack("<LLL", 0, 0, 0)
 		data += pack("<L", ~header_check_sum & 0xffffffff)
 		return data
@@ -156,24 +162,40 @@ class BootGen(object):
 def main():
 	argc = len(argv)
 
-	if argc == 3 :
-		with open(argv[2], "rb") as fin:
-			bootgen = BootGen(None)
-			bootgen.strip_bit(argv[2], "test2")
-			return 0
+	if argc != 5 :
+		print "Usage: bootgen fsl.elf bit u-boot.elf boot.bin"
+		return 0
 			
+	fsl_elf = argv[1]
+	fsl_elf_bin = fsl_elf + ".bin"
+	bit_file = argv[2]
+	bit_file_bin = argv[2] + ".bin"
+	uboot_elf = argv[3]
+	uboot_elf_bin = uboot_elf + ".bin"
+	boot_bin = argv[4]
 
-	fd = open(argv[1], "wb") if argc >= 2 else None
+	fd = open(boot_bin, "wb")
 
 	bootgen = BootGen(fd)
-	data = bootgen.make_boot_header(0x1700, 0x01800c)
+
+	bootgen.strip_bit(bit_file, bit_file_bin)
+
+	binary_start_offset = 0x1700
+	image_length = path.getsize(fsl_elf_bin)
+
+	data = bootgen.make_boot_header(binary_start_offset, image_length)
 	fd.write(data)
-	data = bootgen.make_image_header_table(3, 0x0320, 0x0240)
+
+	image_header_n = 3
+	
+	partiton_header_word_offset = 0x320 #* 4
+	image_header_word_offset = 0x240 #* 4
+
+	data = bootgen.make_image_header_table(image_header_n, partiton_header_word_offset, image_header_word_offset)
 	fd.write(data)
 
 	data = bootgen.make_image_header(0x250, 0x0320, 0, 1, "zynq_fsbl.elf")
 	fd.write(data)
-	print "data.len:", len(data)
 
 	data = bootgen.make_image_header(0x260, 0x0330, 0, 1, "zc702_2d3d_hdmi_wrapper.bit")
 	fd.write(data)
@@ -184,17 +206,53 @@ def main():
 	for i in range(04640 + 32, 06200, 4):
 		fd.write(pack(">L", 0xffffffff))
 
-	data = bootgen.make_partition_header_table(0x6003, 0, 0, 0x05c0, 0x10, 0x01, 0, 0x0240)
+	binary_word_offset0 = binary_start_offset / 4
+	image_word_length0 = image_length / 4
+	data = bootgen.make_partition_header_table(image_word_length0, image_word_length0, image_word_length0, 0, 0, binary_word_offset0, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0240)
 	fd.write(data)
 
-	data = bootgen.make_partition_header_table(0x0f6ec0, 0, 0, 0x65d0, 0x20, 0x01, 0, 0x0250)
+	binary_word_offset1 = binary_word_offset0 + ((image_word_length0 + 15) & ~15)
+	image_word_length1 = path.getsize(bit_file_bin) / 4
+	image_word_length1_16 = ( image_word_length1 + 15 ) & ~15
+
+	data = bootgen.make_partition_header_table(image_word_length1_16, image_word_length1, image_word_length1_16, 0, 0, binary_word_offset1, BootGen.PARTITION_ATTRIBUTE_PL, 0x01, 0, 0x0250)
 	fd.write(data)
 
-	data = bootgen.make_partition_header_table(0x01079a, 0x04000000, 0x04000000, 0x0fd490, 0x10, 0x01, 0, 0x0260)
+	binary_word_offset2 = binary_word_offset1 + ((image_word_length1 + 15) & ~15)
+	image_word_length2 = path.getsize(uboot_elf_bin) / 4
+	data = bootgen.make_partition_header_table(image_word_length2, image_word_length2, image_word_length2, 0x04000000, 0x04000000, binary_word_offset2, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0260)
 	fd.write(data)
+
+	#undocumented
+	data = bootgen.make_partition_header_table(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	fd.write(data)
+
+	for i in range(fd.tell(), binary_word_offset0 * 4) :
+		fd.write(pack("B", 0xff))
+
+	with open(fsl_elf_bin, "rb") as f:
+		for i in range(0, image_word_length0):
+			fd.write(f.read(4))
+
+	for i in range(fd.tell(), binary_word_offset1 * 4) :
+		fd.write(pack("B", 0xff))
+
+	with open(bit_file_bin, "rb") as f:
+		for i in range(0, image_word_length1):
+			fd.write(f.read(4))
+
+	for i in range(fd.tell(), binary_word_offset2 * 4) :
+		fd.write(pack("B", 0xff)) #??
+
+	with open(uboot_elf_bin, "rb") as f:
+		for i in range(0, image_word_length2):
+			fd.write(f.read(4))
+
+	tell_me = fd.tell()
+	for i in range(tell_me, ( tell_me + 15 ) & ~15):
+		fd.write(pack("B", 0xff)) 
 
 	fd.close()
-
 
 if __name__ == "__main__":
 	exit(main())
