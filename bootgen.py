@@ -3,6 +3,7 @@ from os import SEEK_SET, path
 from time import localtime
 import array
 from sys import argv
+import os
 
 class BootGen(object):
 	Version = "0.0"
@@ -150,6 +151,8 @@ class BootGen(object):
 				return False
 			self.__copy_body(fin, bin_file)
 
+		return True
+
 	def make_partition_header_table(self, partition_data_word_len, extracted_data_word_len, total_data_word_len, destination_load_addr, destination_exec_addr, data_word_offset, attribute, section_n, check_sum_word_offset, image_header_word_offet) :
 		data = pack("<LLLL", partition_data_word_len, extracted_data_word_len, total_data_word_len, destination_load_addr)
 		data += pack("<LLLL", destination_exec_addr, data_word_offset, attribute, section_n)
@@ -178,7 +181,15 @@ def main():
 
 	bootgen = BootGen(fd)
 
-	bootgen.strip_bit(bit_file, bit_file_bin)
+	rv = os.system("arm-none-linux-gnueabi-objcopy -O binary %s %s" % (fsl_elf, fsl_elf_bin))
+	if rv != 0 :
+		return rv
+	rv = bootgen.strip_bit(bit_file, bit_file_bin)
+	if rv == False :
+		return 1
+	rv = os.system("arm-none-linux-gnueabi-objcopy -O binary %s %s" % (uboot_elf, uboot_elf_bin))
+	if rv != 0 :
+		return rv
 
 	binary_start_offset = 0x1700
 	image_length = path.getsize(fsl_elf_bin)
