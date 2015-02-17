@@ -1,3 +1,6 @@
+#
+# Copyright (C) 2014,2015 Sinby Corp.
+#
 from struct import unpack, pack, pack_into
 from os import SEEK_SET, path
 from time import localtime
@@ -166,11 +169,11 @@ def main():
 	argc = len(argv)
 
 	if argc != 5 :
-		print "Usage: bootgen fsl.elf bit u-boot.elf boot.bin"
+		print "Usage: bootgen fsbl.elf bit u-boot.elf boot.bin"
 		return 0
 			
-	fsl_elf = argv[1]
-	fsl_elf_bin = fsl_elf + ".bin"
+	fsbl_elf = argv[1]
+	fsbl_elf_bin = fsbl_elf + ".bin"
 	bit_file = argv[2]
 	bit_file_bin = argv[2] + ".bin"
 	uboot_elf = argv[3]
@@ -181,7 +184,7 @@ def main():
 
 	bootgen = BootGen(fd)
 
-	rv = os.system("arm-none-linux-gnueabi-objcopy -O binary %s %s" % (fsl_elf, fsl_elf_bin))
+	rv = os.system("arm-none-linux-gnueabi-objcopy -O binary %s %s" % (fsbl_elf, fsbl_elf_bin))
 	if rv != 0 :
 		return rv
 	rv = bootgen.strip_bit(bit_file, bit_file_bin)
@@ -192,7 +195,7 @@ def main():
 		return rv
 
 	binary_start_offset = 0x1700
-	image_length = path.getsize(fsl_elf_bin)
+	image_length = path.getsize(fsbl_elf_bin)
 
 	data = bootgen.make_boot_header(binary_start_offset, image_length)
 	fd.write(data)
@@ -241,7 +244,7 @@ def main():
 	for i in range(fd.tell(), binary_word_offset0 * 4) :
 		fd.write(pack("B", 0xff))
 
-	with open(fsl_elf_bin, "rb") as f:
+	with open(fsbl_elf_bin, "rb") as f:
 		for i in range(0, image_word_length0):
 			fd.write(f.read(4))
 
