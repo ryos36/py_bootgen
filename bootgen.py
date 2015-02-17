@@ -208,13 +208,13 @@ def main():
 	data = bootgen.make_image_header_table(image_header_n, partiton_header_word_offset, image_header_word_offset)
 	fd.write(data)
 
-	data = bootgen.make_image_header(0x250, 0x0320, 0, 1, "zynq_fsbl.elf")
+	data = bootgen.make_image_header(0x250, 0x0320, 0, 1, fsbl_elf);
 	fd.write(data)
 
-	data = bootgen.make_image_header(0x260, 0x0330, 0, 1, "zc702_2d3d_hdmi_wrapper.bit")
+	data = bootgen.make_image_header(0x260, 0x0330, 0, 1, bit_file);
 	fd.write(data)
 
-	data = bootgen.make_image_header(0x0, 0x0340, 0, 1, "u-boot.elf")
+	data = bootgen.make_image_header(0x0, 0x0340, 0, 1, uboot_elf);
 	fd.write(data)
 
 	for i in range(04640 + 32, 06200, 4):
@@ -234,7 +234,16 @@ def main():
 
 	binary_word_offset2 = binary_word_offset1 + ((image_word_length1 + 15) & ~15)
 	image_word_length2 = path.getsize(uboot_elf_bin) / 4
-	data = bootgen.make_partition_header_table(image_word_length2, image_word_length2, image_word_length2, 0x04000000, 0x04000000, binary_word_offset2, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0260)
+
+	if uboot_elf == "u-boot.elf" :
+		start_address = 0x04000000
+	else:
+		start_address = 0x00100000
+
+	# You can check start address strictly.
+	# arm-none-linux-gnueabi-objdump --section=.text -h u-boot.elf | grep .text | cut -c29-36
+
+	data = bootgen.make_partition_header_table(image_word_length2, image_word_length2, image_word_length2, start_address, start_address, binary_word_offset2, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0260)
 	fd.write(data)
 
 	#undocumented
