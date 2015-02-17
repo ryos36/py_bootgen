@@ -90,9 +90,9 @@ class BootGen(object):
 			for j in range(0, 4):
 				pack_into("B", buf, i + j, b0[i + (3 - j)])
 			#*b0[i: i+ 4])
-			#l = unpack("<L", *b0[i: i + 4])
-			#data += unpack(<"pack("4B", *b0[i: i + 4])
-		#print "pack:", pack('B' * len(buf), *buf)
+			#l = unpack("<L", *b0[i: i + 4]) <= NG
+			#data += unpack(<"4B", *b0[i: i + 4])
+		#print "pack:", pack('B' * len(buf), *buf) <= OK
 		data += pack('B' * len(buf), *buf)
 		#print "xx:", len(data)
 		data += pack(">L", 0)
