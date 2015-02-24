@@ -165,6 +165,92 @@ class BootGen(object):
 		data += pack("<L", ~header_check_sum & 0xffffffff)
 		return data
 		
+	def get_start_address(self, elf_file) :
+		if path.basename(elf_file) == "u-boot.elf" :
+			start_address = 0x04000000
+		else:
+			start_address = 0x00100000
+
+		# You can check start address strictly.
+		# arm-none-linux-gnueabi-objdump --section=.text -h u-boot.elf | grep .text | cut -c29-36
+		return start_address
+
+	def make_boot_bin(self, fsbl_zynq_elf_path, fsbl_zynq_elf_bin, system_bit_path, system_bit_bin, app_elf_path, app_elf_bin, start_address):
+
+		binary_start_offset = 0x1700
+		image_length = path.getsize(fsbl_zynq_elf_bin)
+
+		data = self.make_boot_header(binary_start_offset, image_length)
+		self.fd.write(data)
+
+		image_header_n = 3
+		
+		partiton_header_word_offset = 0x320 #* 4
+		image_header_word_offset = 0x240 #* 4
+
+		data = self.make_image_header_table(image_header_n, partiton_header_word_offset, image_header_word_offset)
+		self.fd.write(data)
+
+		data = self.make_image_header(0x250, 0x0320, 0, 1, path.basename(fsbl_zynq_elf_path));
+		self.fd.write(data)
+
+		data = self.make_image_header(0x260, 0x0330, 0, 1, path.basename(system_bit_path));
+		self.fd.write(data)
+
+		data = self.make_image_header(0x0, 0x0340, 0, 1, path.basename(app_elf_path));
+		self.fd.write(data)
+
+		for i in range(04640 + 32, 06200, 4):
+			self.fd.write(pack(">L", 0xffffffff))
+
+		binary_word_offset0 = binary_start_offset / 4
+		image_word_length0 = image_length / 4
+		data = self.make_partition_header_table(image_word_length0, image_word_length0, image_word_length0, 0, 0, binary_word_offset0, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0240)
+		self.fd.write(data)
+
+		binary_word_offset1 = binary_word_offset0 + ((image_word_length0 + 15) & ~15)
+		image_word_length1 = path.getsize(system_bit_bin) / 4
+		image_word_length1_16 = ( image_word_length1 + 15 ) & ~15
+
+		data = self.make_partition_header_table(image_word_length1_16, image_word_length1, image_word_length1_16, 0, 0, binary_word_offset1, BootGen.PARTITION_ATTRIBUTE_PL, 0x01, 0, 0x0250)
+		self.fd.write(data)
+
+		binary_word_offset2 = binary_word_offset1 + ((image_word_length1 + 15) & ~15)
+		image_word_length2 = path.getsize(app_elf_bin) / 4
+
+		data = self.make_partition_header_table(image_word_length2, image_word_length2, image_word_length2, start_address, start_address, binary_word_offset2, BootGen.PARTITION_ATTRIBUTE_PS, 0x01, 0, 0x0260)
+		self.fd.write(data)
+
+		#undocumented
+		data = self.make_partition_header_table(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+		self.fd.write(data)
+
+		for i in range(self.fd.tell(), binary_word_offset0 * 4) :
+			self.fd.write(pack("B", 0xff))
+
+		with open(fsbl_zynq_elf_bin, "rb") as f:
+			for i in range(0, image_word_length0):
+				self.fd.write(f.read(4))
+
+		for i in range(self.fd.tell(), binary_word_offset1 * 4) :
+			self.fd.write(pack("B", 0xff))
+
+		with open(system_bit_bin, "rb") as f:
+			for i in range(0, image_word_length1):
+				self.fd.write(f.read(4))
+
+		for i in range(self.fd.tell(), binary_word_offset2 * 4) :
+			self.fd.write(pack("B", 0xff)) #??
+
+		with open(app_elf_bin, "rb") as f:
+			for i in range(0, image_word_length2):
+				self.fd.write(f.read(4))
+
+		tell_me = self.fd.tell()
+		for i in range(tell_me, ( tell_me + 15 ) & ~15):
+			self.fd.write(pack("B", 0xff)) 
+
+
 def main():
 	argc = len(argv)
 
