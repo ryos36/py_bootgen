@@ -125,6 +125,9 @@ class BootGen(object):
 			data, = unpack(">L", fin.read(4))
 			fout.write(pack("<L", data))
 
+		for i in range(0, (field_len + 15) / 16 * 16 - field_len, 4) : 
+			fout.write(pack("<L", data))
+
 		if bin_file != False :
 			fout.close()
 
